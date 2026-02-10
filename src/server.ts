@@ -76,6 +76,15 @@ async function handleTwilioSocket(opts: { socket: any; req: any; config: VoxConf
   const logger = createCallLogger(config.logDir, logId);
   logger.event("vox", { type: "twilio.ws.connected" });
 
+  // Buffer Twilio messages that arrive while we await the OpenAI connection.
+  const earlyMessages: string[] = [];
+  let earlyBuffering = true;
+  socket.on("message", (data: any) => {
+    if (!earlyBuffering) return; // main handler takes over
+    const text = Buffer.isBuffer(data) ? data.toString("utf8") : String(data);
+    earlyMessages.push(text);
+  });
+
   const agent: AgentClient | null = config.agentUrl
     ? createHttpAgentClient(config.agentUrl)
     : config.agentCmd
@@ -257,8 +266,7 @@ async function handleTwilioSocket(opts: { socket: any; req: any; config: VoxConf
     }
   });
 
-  socket.on("message", (data: any) => {
-    const text = Buffer.isBuffer(data) ? data.toString("utf8") : String(data);
+  const handleTwilioMessage = (text: string) => {
     let msg: TwilioInboundMessage;
     try {
       msg = JSON.parse(text) as TwilioInboundMessage;
@@ -303,6 +311,15 @@ async function handleTwilioSocket(opts: { socket: any; req: any; config: VoxConf
       logger.close();
       return;
     }
+  };
+
+  // Stop early buffering, replay buffered messages, then handle live messages.
+  earlyBuffering = false;
+  for (const text of earlyMessages) handleTwilioMessage(text);
+  earlyMessages.length = 0;
+  socket.on("message", (data: any) => {
+    const text = Buffer.isBuffer(data) ? data.toString("utf8") : String(data);
+    handleTwilioMessage(text);
   });
 
   socket.on("close", () => {
