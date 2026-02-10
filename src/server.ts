@@ -205,7 +205,7 @@ async function handleTwilioSocket(opts: { socket: any; req: any; config: VoxConf
         openai.send({
           type: "response.create",
           response: {
-            instructions: config.initialGreeting,
+            instructions: `Say exactly the following and nothing else: "${config.initialGreeting}"`,
             output_modalities: ["audio"],
           },
         });
